@@ -1,6 +1,7 @@
+import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import accuracy_score
 from retriever import fetch_and_process_data 
 
 data = fetch_and_process_data(season='2023-24', season_type='Regular Season', games_to_process=10)
@@ -22,5 +23,5 @@ model.fit(X_train, y_train)
 y_pred = model.predict(X_test)
 
 accuracy = accuracy_score(y_test, y_pred)
-print(f'Accuracy: {accuracy * 100:.2f}%')
-print(classification_report(y_test, y_pred))
+
+joblib.dump(model, "momentum_model.pkl")

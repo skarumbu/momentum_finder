@@ -48,3 +48,12 @@ def fetch_and_process_data(season='2023-24', season_type='Regular Season', games
         all_games_df = pd.concat([all_games_df, df], ignore_index=True)
 
     return all_games_df
+
+def get_game_id(team1, team2, date):
+    gamefinder = leaguegamefinder.LeagueGameFinder(season_nullable="2023-24", season_type_nullable="Regular Season")
+    games = gamefinder.get_normalized_dict()["LeagueGameFinderResults"]
+
+    for game in games:
+        if team1 in game["MATCHUP"] and team2 in game["MATCHUP"] and game["GAME_DATE"] == date:
+            return game["GAME_ID"]
+    return None
