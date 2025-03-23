@@ -41,3 +41,7 @@ async def get_momentum(request: GameRequest):
 
     momentum_shifts = get_momentum_shifts(game_id)
     return {"game_id": game_id, "momentum_shifts": momentum_shifts}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
