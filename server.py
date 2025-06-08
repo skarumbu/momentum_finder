@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from nba_api.stats.endpoints import playbyplay
 import pandas as pd
@@ -7,6 +8,15 @@ import numpy as np
 from retriever import convert_time_to_seconds, get_game_id
 
 app = FastAPI()
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://yourdomain.com", "http://localhost:3000"],  # Add your domains
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 model = joblib.load("momentum_model.pkl")
 

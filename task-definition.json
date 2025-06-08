@@ -1,0 +1,21 @@
+{
+    "family": "nba-momentum-task",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "512",
+    "memory": "2048",
+    "executionRoleArn": "arn:aws:iam::610267705174:role/ecsTaskExecutionRole",
+    "containerDefinitions": [
+      {
+        "name": "nba-momentum-container",
+        "image": "610267705174.dkr.ecr.us-east-1.amazonaws.com/nba-momentum-api:latest",
+        "portMappings": [
+          {
+            "containerPort": 80,
+            "protocol": "tcp"
+          }
+        ],
+        "essential": true
+      }
+    ]
+  }
