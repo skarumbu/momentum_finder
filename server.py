@@ -2,6 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from nba_api.stats.endpoints import playbyplay
+from nba_api.live.nba.endpoints import scoreboard
+from datetime import datetime
 import pandas as pd
 import joblib
 import numpy as np
@@ -12,7 +14,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://yourdomain.com", "http://localhost:3000"],  # Add your domains
+    allow_origins=["https://quixotry.me", "http://localhost:3000"],  # Add your domains
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -51,6 +53,34 @@ async def get_momentum(request: GameRequest):
 
     momentum_shifts = get_momentum_shifts(game_id)
     return {"game_id": game_id, "momentum_shifts": momentum_shifts}
+
+@app.get("/get-current-games")
+async def get_current_games():
+    try:
+        board = scoreboard.ScoreBoard()
+        games = board.games.get_dict()
+
+        game_list = []
+        for g in games:
+            home = g['homeTeam']
+            away = g['awayTeam']
+            game_obj = {
+                "gameId": g['gameId'],
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "team1": away['teamName'],
+                "team2": home['teamName'],
+                "status": g['gameStatusText'],
+                "score": {
+                    away['teamName']: away.get('score', 0),
+                    home['teamName']: home.get('score', 0)
+                }
+            }
+            game_list.append(game_obj)
+
+        return {"games": game_list}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 def health_check():
