@@ -14,7 +14,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://quixotry.me", "http://localhost:3000"],  # Add your domains
+    allow_origins=["https://www.quixotry.me", "http://localhost:3000"],  # Add your domains
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
