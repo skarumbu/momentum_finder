@@ -8,8 +8,6 @@ on:
 jobs:
   retrain:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v3
@@ -25,14 +23,31 @@ jobs:
       - name: Retrain model on current season
         run: python model_trainer.py
 
-      - name: Commit updated models if changed
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Upload models to Azure Blob Storage
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add home_run_model.pkl away_run_model.pkl
-          if git diff --staged --quiet; then
-            echo "Models unchanged, skipping commit."
-          else
-            git commit -m "chore: retrain models on $(date -u '+%Y-%m-%d') season data"
-            git push
-          fi
+          ACCOUNT_NAME=$(az storage account list \
+            --resource-group my-website-prod-rg \
+            --query "[?starts_with(name, 'modelsst')].name" \
+            -o tsv)
+          CONN_STR=$(az storage account show-connection-string \
+            --name "$ACCOUNT_NAME" \
+            --resource-group my-website-prod-rg \
+            --query connectionString \
+            -o tsv)
+          az storage blob upload \
+            --connection-string "$CONN_STR" \
+            --container-name models \
+            --name home_run_model.pkl \
+            --file home_run_model.pkl \
+            --overwrite
+          az storage blob upload \
+            --connection-string "$CONN_STR" \
+            --container-name models \
+            --name away_run_model.pkl \
+            --file away_run_model.pkl \
+            --overwrite

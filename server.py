@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from nba_api.live.nba.endpoints import scoreboard
 from datetime import datetime
+import os
 import pandas as pd
 import joblib
 import time
+from azure.storage.blob import BlobServiceClient
 from retriever import get_game_id, get_latest_features, process_game, FEATURES
 
 app = FastAPI()
@@ -17,6 +19,26 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+def _download_models() -> bool:
+    """Download model files from Azure Blob Storage. Returns True if successful."""
+    conn_str = os.getenv("MODEL_STORAGE_CONNECTION_STRING")
+    if not conn_str:
+        print("Warning: MODEL_STORAGE_CONNECTION_STRING not set, skipping model download")
+        return False
+    try:
+        container = BlobServiceClient.from_connection_string(conn_str).get_container_client("models")
+        for blob_name in ("home_run_model.pkl", "away_run_model.pkl"):
+            with open(blob_name, "wb") as f:
+                f.write(container.download_blob(blob_name).readall())
+        return True
+    except Exception as e:
+        print(f"Warning: could not download models from blob storage: {e}")
+        return False
+
+
+_download_models()
 
 try:
     home_run_model = joblib.load("home_run_model.pkl")
@@ -77,7 +99,6 @@ async def get_momentum(request: GameRequest):
 
     try:
         df = process_game(game_id)
-        # Return plays where a run was detected (home or away)
         shifts = df[(df['home_run_coming'] == 1) | (df['away_run_coming'] == 1)]
         return {"game_id": game_id, "momentum_shifts": shifts.to_dict(orient='records')}
     except Exception as e:
