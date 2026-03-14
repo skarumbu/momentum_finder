@@ -1,6 +1,22 @@
+import time
 import numpy as np
 import pandas as pd
 from nba_api.stats.endpoints import playbyplay, leaguegamefinder
+
+NBA_API_TIMEOUT = 60  # seconds
+
+
+def _with_retry(fn, retries=3, backoff=5):
+    """Call fn(), retrying up to `retries` times on exception with exponential backoff."""
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = backoff * (2 ** attempt)
+            print(f"  Retrying after {wait}s (attempt {attempt + 1}/{retries}): {e}")
+            time.sleep(wait)
 
 FEATURES = [
     'quarter',
@@ -118,13 +134,13 @@ def _compute_features_from_df(df: pd.DataFrame, include_labels: bool = False) ->
 
 
 def process_game(game_id: str) -> pd.DataFrame:
-    df = playbyplay.PlayByPlay(game_id).get_data_frames()[0]
+    df = _with_retry(lambda: playbyplay.PlayByPlay(game_id, timeout=NBA_API_TIMEOUT).get_data_frames()[0])
     return _compute_features_from_df(df, include_labels=True)
 
 
 def get_latest_features(game_id: str):
     """Return the feature vector for the most recent scoring play, or None if unavailable."""
-    df = playbyplay.PlayByPlay(game_id).get_data_frames()[0]
+    df = _with_retry(lambda: playbyplay.PlayByPlay(game_id, timeout=NBA_API_TIMEOUT).get_data_frames()[0])
     features_df = _compute_features_from_df(df, include_labels=False)
     if features_df.empty:
         return None
@@ -132,11 +148,12 @@ def get_latest_features(game_id: str):
 
 
 def fetch_and_process_data(season='2023-24', season_type='Regular Season', games_to_process=None):
-    gamefinder = leaguegamefinder.LeagueGameFinder(
+    gamefinder = _with_retry(lambda: leaguegamefinder.LeagueGameFinder(
         team_id_nullable=None,
         season_nullable=season,
         season_type_nullable=season_type,
-    )
+        timeout=NBA_API_TIMEOUT,
+    ))
     games = gamefinder.get_normalized_dict()['LeagueGameFinderResults']
     games = games[:games_to_process] if games_to_process is not None else games
 
@@ -164,10 +181,11 @@ def fetch_and_process_data(season='2023-24', season_type='Regular Season', games
 
 
 def get_game_id(team1, team2, date):
-    gamefinder = leaguegamefinder.LeagueGameFinder(
+    gamefinder = _with_retry(lambda: leaguegamefinder.LeagueGameFinder(
         season_nullable="2023-24",
-        season_type_nullable="Regular Season"
-    )
+        season_type_nullable="Regular Season",
+        timeout=NBA_API_TIMEOUT,
+    ))
     games = gamefinder.get_normalized_dict()["LeagueGameFinderResults"]
     for game in games:
         if team1 in game["MATCHUP"] and team2 in game["MATCHUP"] and game["GAME_DATE"] == date:
