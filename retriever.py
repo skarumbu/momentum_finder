@@ -2,6 +2,23 @@ import time
 import numpy as np
 import pandas as pd
 from nba_api.stats.endpoints import playbyplay, leaguegamefinder
+import nba_api.library.http as nba_http
+
+# stats.nba.com blocks non-browser requests (e.g. from CI).
+# Override headers to mimic a real browser request.
+nba_http.STATS_HEADERS = {
+    'Host': 'stats.nba.com',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:72.0) Gecko/20100101 Firefox/72.0',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'x-nba-stats-origin': 'stats',
+    'x-nba-stats-token': 'true',
+    'Connection': 'keep-alive',
+    'Referer': 'https://stats.nba.com/',
+    'Pragma': 'no-cache',
+    'Cache-Control': 'no-cache',
+}
 
 NBA_API_TIMEOUT = 60  # seconds
 
