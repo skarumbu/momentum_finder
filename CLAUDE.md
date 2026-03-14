@@ -19,11 +19,13 @@ uvicorn server:app --host 0.0.0.0 --port 80
 docker build -t nba-momentum-api:latest -f docker/dockerfile .
 ```
 
-**Retrain the model:**
+**Retrain the model manually (triggers the Azure Container App Job):**
 ```bash
-python model_trainer.py
+az containerapp job start \
+  --name momentum-finder-retrain-prod \
+  --resource-group my-website-prod-rg
 ```
-This fetches 10 games from the 2023-24 NBA season, trains a logistic regression model, and saves it to `momentum_model.pkl`.
+The job runs automatically every Monday at 6am UTC. It trains on all games from the current season, validates ROC-AUC ≥ 0.60, and uploads the models to Azure Blob Storage. The server downloads them on next cold start.
 
 ## Architecture
 
