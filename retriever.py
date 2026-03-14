@@ -19,7 +19,7 @@ def fetch_and_process_data(season='2023-24', season_type='Regular Season', games
 
     games_dict = gamefinder.get_normalized_dict()
     games = games_dict['LeagueGameFinderResults']
-    games_to_process = games[:games_to_process]
+    games_to_process = games[:games_to_process] if games_to_process is not None else games
     
     all_games_df = pd.DataFrame()
 
