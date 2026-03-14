@@ -1,4 +1,4 @@
-name: Deploy to AWS ECS
+name: Deploy to Azure Container Apps
 
 on:
   push:
@@ -8,38 +8,31 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v3
+      - name: Log in to Azure
+        uses: azure/login@v2
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE }}
-          role-session-name: GitHubActionsSession
-          aws-region: ${{ secrets.AWS_REGION }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Log in to Amazon ECR
+      - name: Log in to Azure Container Registry
         run: |
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ECR_URI }}
+          az acr login --name ${{ secrets.ACR_NAME }}
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.AWS_ECR_REPOSITORY }}:latest -f docker/dockerfile .
-          docker tag ${{ secrets.AWS_ECR_REPOSITORY }}:latest ${{ secrets.AWS_ECR_URI }}:latest
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/momentum-finder:latest -f docker/dockerfile .
 
-      - name: Push Docker image to Amazon ECR
+      - name: Push Docker image to ACR
         run: |
-          docker push ${{ secrets.AWS_ECR_URI }}:latest
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/momentum-finder:latest
 
-      - name: Deploy to ECS
+      - name: Update Container App
         run: |
-          aws ecs update-service \
-            --cluster ${{ secrets.AWS_ECS_CLUSTER }} \
-            --service ${{ secrets.AWS_ECS_SERVICE }} \
-            --force-new-deployment \
-            --region ${{ secrets.AWS_REGION }}
+          az containerapp update \
+            --name momentum-finder-prod \
+            --resource-group my-website-prod-rg \
+            --image ${{ secrets.ACR_LOGIN_SERVER }}/momentum-finder:latest
