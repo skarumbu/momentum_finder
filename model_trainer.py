@@ -3,7 +3,7 @@ import joblib
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
 from retriever import fetch_and_process_data, FEATURES, HOME_LABEL, AWAY_LABEL
 
 
@@ -25,8 +25,11 @@ print(f"Training on season {season}, games={args.games or 'all'}...")
 
 data = fetch_and_process_data(season=season, season_type='Regular Season', games_to_process=args.games)
 
+MIN_ROC_AUC = 0.60
+
 X = data[FEATURES].dropna()
 
+all_valid = True
 for label, output_path in [(HOME_LABEL, 'home_run_model.pkl'), (AWAY_LABEL, 'away_run_model.pkl')]:
     y = data[label][X.index]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -35,9 +38,20 @@ for label, output_path in [(HOME_LABEL, 'home_run_model.pkl'), (AWAY_LABEL, 'awa
     model.fit(X_train, y_train)
 
     y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)[:, 1]
+    auc = roc_auc_score(y_test, y_prob)
+
     print(f"\n--- {label} ---")
     print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+    print(f"ROC-AUC:  {auc:.4f}")
     print(classification_report(y_test, y_pred))
 
-    joblib.dump(model, output_path)
-    print(f"Saved to {output_path}")
+    if auc < MIN_ROC_AUC:
+        print(f"ERROR: {label} ROC-AUC {auc:.4f} is below minimum {MIN_ROC_AUC}. Aborting upload.")
+        all_valid = False
+    else:
+        joblib.dump(model, output_path)
+        print(f"Saved to {output_path}")
+
+if not all_valid:
+    raise SystemExit(1)
