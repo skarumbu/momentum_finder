@@ -1,9 +1,11 @@
 import argparse
+import os
 import joblib
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
+from azure.storage.blob import BlobServiceClient
 from retriever import fetch_and_process_data, FEATURES, HOME_LABEL, AWAY_LABEL
 
 
@@ -55,3 +57,15 @@ for label, output_path in [(HOME_LABEL, 'home_run_model.pkl'), (AWAY_LABEL, 'awa
 
 if not all_valid:
     raise SystemExit(1)
+
+# Upload models to Azure Blob Storage so the server can download them on cold start.
+conn_str = os.getenv('MODEL_STORAGE_CONNECTION_STRING')
+if conn_str:
+    container = BlobServiceClient.from_connection_string(conn_str).get_container_client('models')
+    for blob_name in ('home_run_model.pkl', 'away_run_model.pkl'):
+        if os.path.exists(blob_name):
+            with open(blob_name, 'rb') as f:
+                container.upload_blob(blob_name, f, overwrite=True)
+            print(f"Uploaded {blob_name} to blob storage")
+else:
+    print("MODEL_STORAGE_CONNECTION_STRING not set; skipping blob upload")
