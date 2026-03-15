@@ -1,7 +1,7 @@
 import time
 import numpy as np
 import pandas as pd
-from nba_api.stats.endpoints import playbyplay, leaguegamefinder
+from nba_api.stats.endpoints import playbyplay, leaguegamefinder, leaguegamelog
 import nba_api.library.http as nba_http
 
 # stats.nba.com blocks non-browser requests (e.g. from CI).
@@ -165,16 +165,15 @@ def get_latest_features(game_id: str):
 
 
 def fetch_and_process_data(season='2023-24', season_type='Regular Season', games_to_process=None):
-    gamefinder = _with_retry(lambda: leaguegamefinder.LeagueGameFinder(
-        team_id_nullable=None,
-        season_nullable=season,
-        season_type_nullable=season_type,
+    gamelog = _with_retry(lambda: leaguegamelog.LeagueGameLog(
+        season=season,
+        season_type_all_star=season_type,
         timeout=NBA_API_TIMEOUT,
     ))
-    games = gamefinder.get_normalized_dict()['LeagueGameFinderResults']
-    games = games[:games_to_process] if games_to_process is not None else games
+    games = gamelog.get_normalized_dict()['LeagueGameLog']
+    games = games[:games_to_process * 2] if games_to_process is not None else games
 
-    # Deduplicate: LeagueGameFinder returns two entries per game (one per team)
+    # Deduplicate: LeagueGameLog returns two entries per game (one per team)
     seen = set()
     unique_games = []
     for g in games:
@@ -198,13 +197,24 @@ def fetch_and_process_data(season='2023-24', season_type='Regular Season', games
 
 
 def get_game_id(team1, team2, date):
-    gamefinder = _with_retry(lambda: leaguegamefinder.LeagueGameFinder(
-        season_nullable="2023-24",
-        season_type_nullable="Regular Season",
+    season = _date_to_season(date)
+    gamelog = _with_retry(lambda: leaguegamelog.LeagueGameLog(
+        season=season,
+        season_type_all_star="Regular Season",
         timeout=NBA_API_TIMEOUT,
     ))
-    games = gamefinder.get_normalized_dict()["LeagueGameFinderResults"]
+    games = gamelog.get_normalized_dict()["LeagueGameLog"]
     for game in games:
         if team1 in game["MATCHUP"] and team2 in game["MATCHUP"] and game["GAME_DATE"] == date:
             return game["GAME_ID"]
     return None
+
+
+def _date_to_season(date: str) -> str:
+    """Convert a YYYY-MM-DD date string to NBA season format (e.g. '2025-26')."""
+    year = int(date[:4])
+    month = int(date[5:7])
+    if month >= 10:
+        return f"{year}-{str(year + 1)[2:]}"
+    else:
+        return f"{year - 1}-{str(year)[2:]}"
