@@ -7,8 +7,44 @@ import os
 import pandas as pd
 import joblib
 import time
+import logging
+import json
+import uuid
 from azure.storage.blob import BlobServiceClient
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 from retriever import get_game_id, get_latest_features, process_game, FEATURES
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger("momentum-finder")
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = time.time()
+        rid = str(uuid.uuid4())[:8]
+        try:
+            response = await call_next(request)
+            logger.info(json.dumps({
+                "event": "request",
+                "service": "momentum-finder",
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": round((time.time() - start) * 1000, 1),
+                "request_id": rid,
+            }))
+            return response
+        except Exception as exc:
+            logger.error(json.dumps({
+                "event": "error",
+                "service": "momentum-finder",
+                "method": request.method,
+                "path": request.url.path,
+                "error": str(exc),
+                "duration_ms": round((time.time() - start) * 1000, 1),
+                "request_id": rid,
+            }))
+            raise
 
 app = FastAPI()
 
@@ -19,13 +55,14 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+app.add_middleware(MetricsMiddleware)
 
 
 def _download_models() -> bool:
     """Download model files from Azure Blob Storage. Returns True if successful."""
     conn_str = os.getenv("MODEL_STORAGE_CONNECTION_STRING")
     if not conn_str:
-        print("Warning: MODEL_STORAGE_CONNECTION_STRING not set, skipping model download")
+        logger.warning("MODEL_STORAGE_CONNECTION_STRING not set, skipping model download")
         return False
     try:
         container = BlobServiceClient.from_connection_string(conn_str).get_container_client("models")
@@ -34,7 +71,7 @@ def _download_models() -> bool:
                 f.write(container.download_blob(blob_name).readall())
         return True
     except Exception as e:
-        print(f"Warning: could not download models from blob storage: {e}")
+        logger.error(f"Could not download models from blob storage: {e}")
         return False
 
 
@@ -46,7 +83,7 @@ try:
     _models_ready = True
 except FileNotFoundError:
     _models_ready = False
-    print("Warning: model files not found, momentum detection disabled until retrain job runs")
+    logger.warning("Model files not found, momentum detection disabled until retrain job runs")
 
 _momentum_cache: dict[str, tuple[float, str | None]] = {}
 MOMENTUM_CACHE_TTL = 30  # seconds
