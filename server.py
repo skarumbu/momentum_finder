@@ -66,7 +66,7 @@ def _download_models() -> bool:
         return False
     try:
         container = BlobServiceClient.from_connection_string(conn_str).get_container_client("models")
-        for blob_name in ("home_run_model.pkl", "away_run_model.pkl"):
+        for blob_name in ("home_run_model.pkl", "away_run_model.pkl", "win_prob_model.pkl"):
             with open(blob_name, "wb") as f:
                 f.write(container.download_blob(blob_name).readall())
         return True
@@ -80,12 +80,13 @@ _download_models()
 try:
     home_run_model = joblib.load("home_run_model.pkl")
     away_run_model = joblib.load("away_run_model.pkl")
+    win_prob_model = joblib.load("win_prob_model.pkl")
     _models_ready = True
 except FileNotFoundError:
     _models_ready = False
     logger.warning("Model files not found, momentum detection disabled until retrain job runs")
 
-_momentum_cache: dict[str, tuple[float, str | None]] = {}
+_momentum_cache: dict[str, tuple[float, str | None, float | None]] = {}
 MOMENTUM_CACHE_TTL = 30  # seconds
 
 
@@ -95,37 +96,38 @@ class GameRequest(BaseModel):
     date: str  # Format: YYYY-MM-DD
 
 
-def get_current_momentum(game_id: str, home_team: str, away_team: str) -> str | None:
-    """Returns the team name predicted to go on a run, or None."""
+def get_current_momentum(game_id: str, home_team: str, away_team: str) -> tuple[str | None, float | None]:
+    """Returns (momentum_team, home_win_probability). Either value may be None on error."""
     if not _models_ready:
-        return None
+        return None, None
 
     now = time.time()
     if game_id in _momentum_cache:
-        cached_at, result = _momentum_cache[game_id]
+        cached_at, momentum_team, home_win_prob = _momentum_cache[game_id]
         if now - cached_at < MOMENTUM_CACHE_TTL:
-            return result
+            return momentum_team, home_win_prob
 
     try:
         features = get_latest_features(game_id)
         if features is None:
-            result = None
+            momentum_team, home_win_prob = None, None
         else:
             X = pd.DataFrame([features])
-            home_prob = home_run_model.predict_proba(X)[0][1]
-            away_prob = away_run_model.predict_proba(X)[0][1]
+            home_run_prob = home_run_model.predict_proba(X)[0][1]
+            away_run_prob = away_run_model.predict_proba(X)[0][1]
+            home_win_prob = float(win_prob_model.predict_proba(X)[0][1])
 
-            if home_prob >= 0.5 and home_prob >= away_prob:
-                result = home_team
-            elif away_prob >= 0.5:
-                result = away_team
+            if home_run_prob >= 0.5 and home_run_prob >= away_run_prob:
+                momentum_team = home_team
+            elif away_run_prob >= 0.5:
+                momentum_team = away_team
             else:
-                result = None
+                momentum_team = None
     except Exception:
-        result = None
+        momentum_team, home_win_prob = None, None
 
-    _momentum_cache[game_id] = (now, result)
-    return result
+    _momentum_cache[game_id] = (now, momentum_team, home_win_prob)
+    return momentum_team, home_win_prob
 
 
 @app.post("/get-momentum")
@@ -155,8 +157,9 @@ async def get_current_games():
             is_live = g.get('gameStatus') == 2
 
             momentum_team = None
+            home_win_prob = None
             if is_live:
-                momentum_team = get_current_momentum(g['gameId'], home['teamName'], away['teamName'])
+                momentum_team, home_win_prob = get_current_momentum(g['gameId'], home['teamName'], away['teamName'])
 
             game_obj = {
                 "gameId": g['gameId'],
@@ -169,6 +172,10 @@ async def get_current_games():
                     home['teamName']: home.get('score', 0)
                 },
                 "momentumTeam": momentum_team,
+                "winProbability": {
+                    home['teamName']: round(home_win_prob, 2),
+                    away['teamName']: round(1 - home_win_prob, 2),
+                } if home_win_prob is not None else None,
             }
             game_list.append(game_obj)
 

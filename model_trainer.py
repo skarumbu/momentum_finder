@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
 from azure.storage.blob import BlobServiceClient
-from retriever import fetch_and_process_data, FEATURES, HOME_LABEL, AWAY_LABEL
+from retriever import fetch_and_process_data, FEATURES, HOME_LABEL, AWAY_LABEL, WIN_LABEL
 
 
 def get_current_season() -> str:
@@ -58,11 +58,29 @@ for label, output_path in [(HOME_LABEL, 'home_run_model.pkl'), (AWAY_LABEL, 'awa
 if not all_valid:
     raise SystemExit(1)
 
+# Win probability model
+y_win = data[WIN_LABEL][X.index].dropna()
+X_win = X.loc[y_win.index]
+X_train_w, X_test_w, y_train_w, y_test_w = train_test_split(X_win, y_win, test_size=0.2, random_state=42)
+win_model = LogisticRegression(class_weight='balanced', max_iter=1000)
+win_model.fit(X_train_w, y_train_w)
+y_prob_w = win_model.predict_proba(X_test_w)[:, 1]
+auc_w = roc_auc_score(y_test_w, y_prob_w)
+print(f"\n--- {WIN_LABEL} ---")
+print(f"Accuracy: {accuracy_score(y_test_w, win_model.predict(X_test_w)):.4f}")
+print(f"ROC-AUC:  {auc_w:.4f}")
+print(classification_report(y_test_w, win_model.predict(X_test_w)))
+if auc_w < MIN_ROC_AUC:
+    print(f"ERROR: {WIN_LABEL} ROC-AUC {auc_w:.4f} is below minimum {MIN_ROC_AUC}. Aborting upload.")
+    raise SystemExit(1)
+joblib.dump(win_model, 'win_prob_model.pkl')
+print("Saved to win_prob_model.pkl")
+
 # Upload models to Azure Blob Storage so the server can download them on cold start.
 conn_str = os.getenv('MODEL_STORAGE_CONNECTION_STRING')
 if conn_str:
     container = BlobServiceClient.from_connection_string(conn_str).get_container_client('models')
-    for blob_name in ('home_run_model.pkl', 'away_run_model.pkl'):
+    for blob_name in ('home_run_model.pkl', 'away_run_model.pkl', 'win_prob_model.pkl'):
         if os.path.exists(blob_name):
             with open(blob_name, 'rb') as f:
                 container.upload_blob(blob_name, f, overwrite=True)

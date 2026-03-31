@@ -56,6 +56,8 @@ FEATURES = [
     'away_points_last_2min',
     'home_points_last_4min',
     'away_points_last_4min',
+    'home_points_last_6min',
+    'away_points_last_6min',
     'time_since_home_scored',
     'time_since_away_scored',
     'timeout_last_2min',
@@ -63,6 +65,7 @@ FEATURES = [
 ]
 HOME_LABEL = 'home_run_coming'
 AWAY_LABEL = 'away_run_coming'
+WIN_LABEL = 'home_team_wins'
 
 
 def convert_time_to_seconds(time_str):
@@ -143,6 +146,8 @@ def _compute_features_from_df(df: pd.DataFrame, include_labels: bool = False) ->
             'away_points_last_2min': window_sum(cum_away, pos, 120),
             'home_points_last_4min': window_sum(cum_home, pos, 240),
             'away_points_last_4min': window_sum(cum_away, pos, 240),
+            'home_points_last_6min': window_sum(cum_home, pos, 360),
+            'away_points_last_6min': window_sum(cum_away, pos, 360),
             'time_since_home_scored': time_since_home,
             'time_since_away_scored': time_since_away,
             'timeout_last_2min': window_sum(cum_timeout, pos, 120),
@@ -226,7 +231,19 @@ def process_game(game_id: str) -> pd.DataFrame:
     except Exception as e:
         print(f"  CDN failed for {game_id} ({e}), trying stats.nba.com...")
         df = _with_retry(lambda: playbyplay.PlayByPlay(game_id, timeout=NBA_API_TIMEOUT).get_data_frames()[0])
-    return _compute_features_from_df(df, include_labels=True)
+    result = _compute_features_from_df(df, include_labels=True)
+    # Determine game winner from the final score in raw PBP ("away - home" format)
+    scored = df[df['SCORE'].notna()]
+    if not scored.empty and not result.empty:
+        final_scores = str(scored.iloc[-1]['SCORE']).split(' - ')
+        try:
+            home_wins = int(final_scores[1]) > int(final_scores[0])
+            result[WIN_LABEL] = int(home_wins)
+        except (ValueError, IndexError):
+            result[WIN_LABEL] = np.nan
+    else:
+        result[WIN_LABEL] = np.nan
+    return result
 
 
 def get_latest_features(game_id: str):
