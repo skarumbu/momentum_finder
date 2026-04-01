@@ -171,6 +171,7 @@ async def get_current_games():
                     away['teamName']: away.get('score', 0),
                     home['teamName']: home.get('score', 0)
                 },
+                "isLive": is_live,
                 "momentumTeam": momentum_team,
                 "winProbability": {
                     home['teamName']: round(home_win_prob, 2),
